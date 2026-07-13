@@ -1,0 +1,9 @@
+README.md
+main.py
+pyproject.toml
+vit_vs_loop_with_pruning.egg-info/PKG-INFO
+vit_vs_loop_with_pruning.egg-info/SOURCES.txt
+vit_vs_loop_with_pruning.egg-info/dependency_links.txt
+vit_vs_loop_with_pruning.egg-info/entry_points.txt
+vit_vs_loop_with_pruning.egg-info/requires.txt
+vit_vs_loop_with_pruning.egg-info/top_level.txt

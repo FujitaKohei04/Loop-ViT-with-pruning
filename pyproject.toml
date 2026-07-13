@@ -1,0 +1,22 @@
+[project]
+name = "vit-vs-loop-with-pruning"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "timm",
+]
+
+[project.optional-dependencies]
+vit = [
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "timm>=1.0.12",
+]
+
+[project.scripts]
+pretrained-vit = "main:main"
+
+[tool.uv.sources]
+timm = { git = "https://github.com/rwightman/pytorch-image-models.git" }
