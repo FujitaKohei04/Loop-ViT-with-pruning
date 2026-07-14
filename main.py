@@ -18,6 +18,9 @@ import SReT
 import random
 import numpy as np
 
+from ptflops import get_model_complexity_info
+import time
+
 Batch = tuple[torch.Tensor, torch.Tensor]
 
 
@@ -260,6 +263,62 @@ def evaluate_topk(
         "top5": correct_top5 / total,
     }
 
+def measure_complexity(model, image_size):
+    model.eval()
+
+    macs, params = get_model_complexity_info(
+        model,
+        (3, image_size, image_size),
+        as_strings=False,
+        print_per_layer_stat=False,
+        verbose=False,
+    )
+
+    gflops = macs * 2 / 1e9
+
+    return {
+        "params": params,
+        "gflops": gflops,
+    }
+
+def measure_latency(
+    model,
+    device,
+    image_size,
+    repeat=100,
+):
+    model.eval()
+
+    x = torch.randn(
+        1,
+        3,
+        image_size,
+        image_size,
+        device=device,
+    )
+
+    # Warm-up
+    with torch.inference_mode():
+        for _ in range(20):
+            model(x)
+
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+
+    start = time.perf_counter()
+
+    with torch.inference_mode():
+        for _ in range(repeat):
+            model(x)
+
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+
+    end = time.perf_counter()
+
+    latency = (end - start) * 1000 / repeat
+
+    return latency
 
 def make_random_calibration_batches(
     *,
@@ -354,6 +413,17 @@ def main() -> None:
         model = SReT.SReT_S(pretrained=False)
         model.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
         model.to(device)
+    
+    baseline_complexity = measure_complexity(
+        model,
+        args.image_size,
+    )
+
+    baseline_latency = measure_latency(
+        model,
+        device,
+        args.image_size,
+    )
 
     if args.eval_only:
         if args.imagenet_root is None:
@@ -412,6 +482,17 @@ def main() -> None:
         device,
     )
 
+    pruned_complexity = measure_complexity(
+        model,
+        args.image_size,
+    )
+
+    pruned_latency = measure_latency(
+        model,
+        device,
+        args.image_size,
+    )
+
     if val_loader is None:
         model.eval()
         with torch.inference_mode():
@@ -442,10 +523,45 @@ def main() -> None:
                 f"{baseline_metrics['top5']:.2%} -> {metrics['top5']:.2%} "
                 f"({metrics['top5'] - baseline_metrics['top5']:+.2%})"
             )
+            print("========== Complexity ==========")
+
+            print(
+                f"Params : "
+                f"{baseline_complexity['params']/1e6:.2f} M"
+            )
+
+            print(
+                f"GFLOPs : "
+                f"{baseline_complexity['gflops']:.2f}"
+            )
+
+            print(
+                f"Latency : "
+                f"{baseline_latency:.2f} ms"
+            )
+
+            print()
+
+            print("========== After Pruning ==========")
+
+            print(
+                f"Params : "
+                f"{pruned_complexity['params']/1e6:.2f} M"
+            )
+
+            print(
+                f"GFLOPs : "
+                f"{pruned_complexity['gflops']:.2f}"
+            )
+
+            print(
+                f"Latency : "
+                f"{pruned_latency:.2f} ms"
+            )
         else:
             print(f"ImageNet val top-1: {metrics['top1']:.2%}")
             print(f"ImageNet val top-5: {metrics['top5']:.2%}")
-
+ 
 
 if __name__ == "__main__":
     main()
