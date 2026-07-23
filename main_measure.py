@@ -18,8 +18,11 @@ import SReT
 import random
 import numpy as np
 
+from analysis.statistics import collect_weights
 from ptflops import get_model_complexity_info
 import time
+
+import matplotlib.pyplot as plt
 
 Batch = tuple[torch.Tensor, torch.Tensor]
 
@@ -365,7 +368,8 @@ def set_seed(seed: int = 42):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run timm ViT with optional Taylor pruning.")
-    parser.add_argument("--model-name", default="vit_base_patch16_224")
+    parser.add_argument("--model-name-normal", default="vit_base_patch16_224")
+    parser.add_argument("--model-name-loop", default="sret_s")
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -398,23 +402,9 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+def run_model(model, device, args, model_name):
 
-def main() -> None:
-    args = parse_args()
-    set_seed(42)
-    device = torch.device(args.device)
-
-    if(args.model_name != "sret_s"):
-        model = timm.create_model(
-            args.model_name,
-            pretrained=args.pretrained,
-            num_classes=args.num_classes,
-        ).to(device)
-    else:
-        model = SReT.SReT_S(pretrained=False)
-        model.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
-        model.to(device)
-    
+    print(f"\n\n===== Running model =====: {model_name}")
     baseline_complexity = measure_complexity(
         model,
         args.image_size,
@@ -472,6 +462,8 @@ def main() -> None:
             device,
             max_batches=args.eval_batches,
         )
+    
+    weights = collect_weights(model)
 
     pruning_stats = apply_taylor_pruning(
         model,
@@ -561,10 +553,37 @@ def main() -> None:
                 f"Latency : "
                 f"{pruned_latency:.2f} ms"
             )
+            for name, w in weights.items():
+                plt.figure()
+                plt.hist(
+                    w.flatten().numpy(),
+                    bins=100
+                )
+                plt.title(name)
+                plt.savefig(f"analysis-data/weights/{model_name}/weight_{name}.png")
+                plt.close()
         else:
             print(f"ImageNet val top-1: {metrics['top1']:.2%}")
             print(f"ImageNet val top-5: {metrics['top5']:.2%}")
- 
+
+def main() -> None:
+    args = parse_args()
+    set_seed(42)
+    device = torch.device(args.device)
+
+    if(args.model_name_normal == "vit_base_patch16_224"):
+        model_normal = timm.create_model(
+            args.model_name_normal,
+            pretrained=args.pretrained,
+            num_classes=args.num_classes,
+        ).to(device)
+    if(args.model_name_loop == "sret_s"):
+        model_loop = SReT.SReT_S(pretrained=False)
+        model_loop.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
+        model_loop.to(device)
+
+    run_model(model_normal, device, args, args.model_name_normal)
+    run_model(model_loop, device, args, args.model_name_loop)
 
 if __name__ == "__main__":
     main()

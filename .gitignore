@@ -4,3 +4,4 @@ data/
 pre-trained/
 __pycache__/
 .venv/
+analysis-data/
