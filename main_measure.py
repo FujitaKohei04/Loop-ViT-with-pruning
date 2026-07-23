@@ -26,7 +26,9 @@ import matplotlib.pyplot as plt
 
 Batch = tuple[torch.Tensor, torch.Tensor]
 
-
+@dataclass
+class Analyzing_data:
+    weights: dict[str, torch.Tensor]
 @dataclass(frozen=True)
 class TaylorPruningConfig:
     """Configuration for first-order Taylor pruning."""
@@ -553,8 +555,12 @@ def run_model(model, device, args, model_name):
                 f"Latency : "
                 f"{pruned_latency:.2f} ms"
             )
+
+            # analysis_data = Analyzing_data(weights=weights)
             for name, w in weights.items():
                 plt.figure()
+                plt.xlim(-1, 1)
+                plt.ylim(0, 100000)
                 plt.hist(
                     w.flatten().numpy(),
                     bins=100
@@ -582,8 +588,8 @@ def main() -> None:
         model_loop.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
         model_loop.to(device)
 
-    run_model(model_normal, device, args, args.model_name_normal)
-    run_model(model_loop, device, args, args.model_name_loop)
+    analysis_data_normal = run_model(model_normal, device, args, args.model_name_normal)
+    analysis_data_loop = run_model(model_loop, device, args, args.model_name_loop)
 
 if __name__ == "__main__":
     main()
