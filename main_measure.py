@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from itertools import islice
 from pathlib import Path
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from analysis.statistics import collect_weights
 from ptflops import get_model_complexity_info
 import time
 
+os.environ.setdefault("MPLCONFIGDIR", str(Path("/tmp") / "matplotlib-cache"))
 import matplotlib.pyplot as plt
 
 Batch = tuple[torch.Tensor, torch.Tensor]
@@ -29,6 +31,9 @@ Batch = tuple[torch.Tensor, torch.Tensor]
 @dataclass
 class Analyzing_data:
     weights: dict[str, torch.Tensor]
+    activations: dict[str, torch.Tensor] | None = None
+
+
 @dataclass(frozen=True)
 class TaylorPruningConfig:
     """Configuration for first-order Taylor pruning."""
@@ -47,6 +52,153 @@ def iter_prunable_linear_layers(model: nn.Module) -> Iterable[tuple[str, nn.Line
     for name, module in model.named_modules():
         if isinstance(module, nn.Linear):
             yield name, module
+
+
+def _is_activation_target(module: nn.Module, target: str) -> bool:
+    if target == "linear":
+        return isinstance(module, nn.Linear)
+    if target == "conv":
+        return isinstance(module, nn.Conv2d)
+    if target == "linear-conv":
+        return isinstance(module, (nn.Linear, nn.Conv2d))
+    if target == "all-leaf":
+        return len(list(module.children())) == 0
+    raise ValueError(f"Unknown activation target: {target}")
+
+
+def iter_activation_layers(
+    model: nn.Module,
+    target: str,
+) -> Iterable[tuple[str, nn.Module]]:
+    """Yield modules whose forward outputs should be collected."""
+
+    for name, module in model.named_modules():
+        if name and _is_activation_target(module, target):
+            yield name, module
+
+
+def _flatten_activation_output(output: object) -> torch.Tensor | None:
+    if isinstance(output, torch.Tensor):
+        return output.detach().flatten().cpu()
+    if isinstance(output, (list, tuple)):
+        tensors = [
+            item.detach().flatten().cpu()
+            for item in output
+            if isinstance(item, torch.Tensor)
+        ]
+        if tensors:
+            return torch.cat(tensors)
+    return None
+
+
+@torch.inference_mode()
+def collect_activations(
+    model: nn.Module,
+    batches: Iterable[Batch],
+    device: torch.device,
+    *,
+    target: str = "linear",
+    max_elements_per_layer: int = 200_000,
+) -> dict[str, torch.Tensor]:
+    """Collect sampled forward activations for selected modules."""
+
+    activations: dict[str, list[torch.Tensor]] = {}
+    counts: dict[str, int] = {}
+    handles = []
+
+    def make_hook(name: str):
+        def hook(_module: nn.Module, _inputs: tuple[object, ...], output: object) -> None:
+            flat = _flatten_activation_output(output)
+            if flat is None:
+                return
+
+            remaining = max_elements_per_layer - counts.get(name, 0)
+            if remaining <= 0:
+                return
+
+            sample = flat[:remaining]
+            activations.setdefault(name, []).append(sample)
+            counts[name] = counts.get(name, 0) + sample.numel()
+
+        return hook
+
+    for name, module in iter_activation_layers(model, target):
+        handles.append(module.register_forward_hook(make_hook(name)))
+
+    model.eval()
+    try:
+        for images, _targets in batches:
+            images = images.to(device, non_blocking=True)
+            model(images)
+    finally:
+        for handle in handles:
+            handle.remove()
+
+    return {
+        name: torch.cat(values)
+        for name, values in activations.items()
+        if values
+    }
+
+
+def _safe_plot_name(name: str) -> str:
+    return name.replace("/", "_").replace(".", "_")
+
+
+def save_tensor_histograms(
+    tensors: dict[str, torch.Tensor],
+    output_dir: str | Path,
+    *,
+    prefix: str,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+) -> None:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, tensor in tensors.items():
+        plt.figure()
+        if xlim is not None:
+            plt.xlim(*xlim)
+        if ylim is not None:
+            plt.ylim(*ylim)
+        plt.hist(
+            tensor.flatten().numpy(),
+            bins=100,
+        )
+        plt.title(name)
+        plt.savefig(output_dir / f"{prefix}_{_safe_plot_name(name)}.png")
+        plt.close()
+
+
+def save_weight_histograms(
+    weights: dict[str, torch.Tensor],
+    model_name: str,
+) -> None:
+    save_tensor_histograms(
+        weights,
+        Path("analysis-data") / "weights" / model_name,
+        prefix="weight",
+        xlim=(-1, 1),
+        ylim=(0, 100000),
+    )
+
+
+def save_activation_outputs(
+    activations: dict[str, torch.Tensor],
+    model_name: str,
+    *,
+    save_tensors: bool,
+) -> None:
+    output_dir = Path("analysis-data") / "activations" / model_name
+    save_tensor_histograms(
+        activations,
+        output_dir,
+        prefix="activation",
+    )
+    if save_tensors:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(activations, output_dir / "activations.pt")
 
 
 def collect_taylor_scores(
@@ -381,6 +533,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--taylor-prune-amount", type=float, default=0.3)
     parser.add_argument("--prune-bias", action="store_true")
     parser.add_argument(
+        "--collect-activations",
+        action="store_true",
+        help="Collect baseline forward activations for each model.",
+    )
+    parser.add_argument(
+        "--activation-batches",
+        type=int,
+        default=1,
+        help="Number of batches used for activation collection.",
+    )
+    parser.add_argument(
+        "--activation-target",
+        choices=("linear", "conv", "linear-conv", "all-leaf"),
+        default="linear",
+        help="Module type whose forward activations are collected.",
+    )
+    parser.add_argument(
+        "--activation-max-elements-per-layer",
+        type=int,
+        default=200_000,
+        help="Maximum number of flattened activation values kept per layer.",
+    )
+    parser.add_argument(
+        "--save-activation-tensors",
+        action="store_true",
+        help="Also save collected activation tensors as activations.pt.",
+    )
+    parser.add_argument(
         "--imagenet-root",
         default=None,
         help="Path containing ImageNet train/ and val/ directories.",
@@ -404,7 +584,7 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-def run_model(model, device, args, model_name):
+def run_model(model, device, args, model_name) -> Analyzing_data | None:
 
     print(f"\n\n===== Running model =====: {model_name}")
     baseline_complexity = measure_complexity(
@@ -428,6 +608,20 @@ def run_model(model, device, args, model_name):
             batch_size=args.batch_size,
             num_workers=args.num_workers,
         )
+        if args.collect_activations:
+            activations = collect_activations(
+                model,
+                islice(val_loader, args.activation_batches),
+                device,
+                target=args.activation_target,
+                max_elements_per_layer=args.activation_max_elements_per_layer,
+            )
+            save_activation_outputs(
+                activations,
+                model_name,
+                save_tensors=args.save_activation_tensors,
+            )
+            print(f"Saved activations: {len(activations)} layers")
         metrics = evaluate_topk(
             model,
             val_loader,
@@ -447,9 +641,17 @@ def run_model(model, device, args, model_name):
             num_workers=args.num_workers,
         )
         calibration_batches = islice(train_loader, args.calibration_batches)
+        activation_batches = islice(train_loader, args.activation_batches)
     else:
         calibration_batches = make_random_calibration_batches(
             num_batches=args.calibration_batches,
+            batch_size=args.batch_size,
+            num_classes=args.num_classes,
+            image_size=args.image_size,
+            device=device,
+        )
+        activation_batches = make_random_calibration_batches(
+            num_batches=args.activation_batches,
             batch_size=args.batch_size,
             num_classes=args.num_classes,
             image_size=args.image_size,
@@ -466,6 +668,23 @@ def run_model(model, device, args, model_name):
         )
     
     weights = collect_weights(model)
+    save_weight_histograms(weights, model_name)
+
+    activations = None
+    if args.collect_activations:
+        activations = collect_activations(
+            model,
+            activation_batches,
+            device,
+            target=args.activation_target,
+            max_elements_per_layer=args.activation_max_elements_per_layer,
+        )
+        save_activation_outputs(
+            activations,
+            model_name,
+            save_tensors=args.save_activation_tensors,
+        )
+        print(f"Saved activations: {len(activations)} layers")
 
     pruning_stats = apply_taylor_pruning(
         model,
@@ -555,22 +774,11 @@ def run_model(model, device, args, model_name):
                 f"Latency : "
                 f"{pruned_latency:.2f} ms"
             )
-
-            # analysis_data = Analyzing_data(weights=weights)
-            for name, w in weights.items():
-                plt.figure()
-                plt.xlim(-1, 1)
-                plt.ylim(0, 100000)
-                plt.hist(
-                    w.flatten().numpy(),
-                    bins=100
-                )
-                plt.title(name)
-                plt.savefig(f"analysis-data/weights/{model_name}/weight_{name}.png")
-                plt.close()
         else:
             print(f"ImageNet val top-1: {metrics['top1']:.2%}")
             print(f"ImageNet val top-5: {metrics['top5']:.2%}")
+
+    return Analyzing_data(weights=weights, activations=activations)
 
 def main() -> None:
     args = parse_args()
