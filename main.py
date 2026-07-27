@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 import timm
 from timm.data import create_transform, resolve_model_data_config
 
+from imagenet_labels import remap_imagenet_targets
 import SReT
 
 import random
@@ -171,6 +172,8 @@ def build_imagenet_loaders(
 
     train_dataset = datasets.ImageFolder(train_dir, transform=train_transform)
     val_dataset = datasets.ImageFolder(val_dir, transform=val_transform)
+    remap_imagenet_targets(train_dataset)
+    remap_imagenet_targets(val_dataset)
 
     loader_kwargs = {
         "batch_size": batch_size,
@@ -215,6 +218,7 @@ def build_imagenet_val_loader(
     data_config = resolve_model_data_config(model)
     val_transform = create_transform(**data_config, is_training=False)
     val_dataset = datasets.ImageFolder(val_dir, transform=val_transform)
+    remap_imagenet_targets(val_dataset)
 
     return DataLoader(
         val_dataset,

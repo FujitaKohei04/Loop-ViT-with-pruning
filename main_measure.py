@@ -14,11 +14,13 @@ from torch.utils.data import DataLoader
 import timm
 from timm.data import create_transform, resolve_model_data_config
 
+import LoopViT
 import SReT
 
 import random
 import numpy as np
 
+from imagenet_labels import remap_imagenet_targets
 from analysis.statistics import collect_weights
 from ptflops import get_model_complexity_info
 import time
@@ -328,6 +330,8 @@ def build_imagenet_loaders(
 
     train_dataset = datasets.ImageFolder(train_dir, transform=train_transform)
     val_dataset = datasets.ImageFolder(val_dir, transform=val_transform)
+    remap_imagenet_targets(train_dataset)
+    remap_imagenet_targets(val_dataset)
 
     loader_kwargs = {
         "batch_size": batch_size,
@@ -372,6 +376,7 @@ def build_imagenet_val_loader(
     data_config = resolve_model_data_config(model)
     val_transform = create_transform(**data_config, is_training=False)
     val_dataset = datasets.ImageFolder(val_dir, transform=val_transform)
+    remap_imagenet_targets(val_dataset)
 
     return DataLoader(
         val_dataset,
@@ -522,8 +527,9 @@ def set_seed(seed: int = 42):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run timm ViT with optional Taylor pruning.")
-    parser.add_argument("--model-name-normal", default="vit_base_patch16_224")
-    parser.add_argument("--model-name-loop", default="sret_s")
+    parser.add_argument("--model-name-normal")
+    parser.add_argument("--model-name-comp-loop")
+    parser.add_argument("--model-name-loop")
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -784,6 +790,7 @@ def main() -> None:
     args = parse_args()
     set_seed(42)
     device = torch.device(args.device)
+    model_normal = model_comp_loop = model_loop = None
 
     if(args.model_name_normal == "vit_base_patch16_224"):
         model_normal = timm.create_model(
@@ -791,13 +798,24 @@ def main() -> None:
             pretrained=args.pretrained,
             num_classes=args.num_classes,
         ).to(device)
-    if(args.model_name_loop == "sret_s"):
-        model_loop = SReT.SReT_S(pretrained=False)
-        model_loop.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
-        model_loop.to(device)
+    if(args.model_name_comp_loop == "sret_s"):
+        model_comp_loop = SReT.SReT_S(pretrained=False)
+        model_comp_loop.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
+        model_comp_loop.to(device)
 
-    analysis_data_normal = run_model(model_normal, device, args, args.model_name_normal)
-    analysis_data_loop = run_model(model_loop, device, args, args.model_name_loop)
+    if(args.model_name_loop == "loop_vit"):
+        model_loop = LoopViT.build_loop_vit_base_patch16_224(
+            pretrained=False,
+            use_iteration_embedding=False,
+        ).to(device)
+
+    if model_loop is not None:
+        analysis_data_loop = run_model(model_loop, device, args, args.model_name_loop)
+    if model_normal is not None:
+        analysis_data_normal = run_model(model_normal, device, args, args.model_name_normal)
+    if model_comp_loop is not None:
+        analysis_data_comp_loop = run_model(model_comp_loop, device, args, args.model_name_comp_loop)
+
 
 if __name__ == "__main__":
     main()

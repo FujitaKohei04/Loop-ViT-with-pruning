@@ -1,0 +1,27 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "often",
+            "type": "shell",
+            "command": "uv run python main_measure.py --imagenet-root /data/ImageNet --num-classes 1000 --batch-size 32 --calibration-batches 32 --taylor-prune-amount 0.3 --model-name-normal vit_base_patch16_224 --model-name-comp-loop sret_s --model-name-loop loop_vit",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "two",
+            "type": "shell",
+            "command": "echo Hello",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

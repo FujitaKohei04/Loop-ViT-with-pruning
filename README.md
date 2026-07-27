@@ -53,6 +53,35 @@ This implementation applies unstructured masks to `Linear` weights, so layer
 shapes, hidden sizes, and attention head counts do not change. The visible
 effect is sparsity and accuracy change, not a smaller printed architecture.
 
+## LoopViT
+
+`LoopViT.py` provides a minimal looped ViT for experiments. By default it starts
+from `timm`'s `vit_base_patch16_224`, keeps blocks 1, 6, and 12, and repeats
+those three blocks four times. Iteration embeddings can be enabled or disabled.
+
+```python
+from LoopViT import build_loop_vit_base_patch16_224
+
+model = build_loop_vit_base_patch16_224(
+    pretrained=True,
+    num_classes=1000,
+    use_iteration_embedding=True,
+    loop_count=4,
+)
+```
+
+For fine-tuning, choose a trainable-parameter mode and pass the returned groups
+to your optimizer:
+
+```python
+model.configure_finetuning("head-norm")
+param_groups = model.get_finetuning_parameter_groups(
+    base_lr=1e-5,
+    head_lr=1e-3,
+    iteration_lr=1e-4,
+)
+```
+
 ## ImageNet validation
 
 For ImageNet experiments, prepare the standard `ImageFolder` layout:
