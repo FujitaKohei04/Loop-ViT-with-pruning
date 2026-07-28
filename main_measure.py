@@ -20,6 +20,7 @@ import SReT
 import random
 import numpy as np
 
+from fine_tuning import FineTuningConfig, fine_tune_model
 from imagenet_labels import remap_imagenet_targets
 from analysis.statistics import collect_weights
 from ptflops import get_model_complexity_info
@@ -539,6 +540,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--taylor-prune-amount", type=float, default=0.3)
     parser.add_argument("--prune-bias", action="store_true")
     parser.add_argument(
+        "--fine-tune-epochs",
+        type=int,
+        default=0,
+        help="Fine-tune for this many epochs after Taylor pruning.",
+    )
+    parser.add_argument(
+        "--fine-tune-lr",
+        type=float,
+        default=1e-5,
+        help="Learning rate used for post-pruning fine-tuning.",
+    )
+    parser.add_argument(
+        "--fine-tune-weight-decay",
+        type=float,
+        default=1e-4,
+        help="AdamW weight decay used for post-pruning fine-tuning.",
+    )
+    parser.add_argument(
+        "--fine-tune-batches",
+        type=int,
+        default=None,
+        help="Limit fine-tuning batches per epoch for quick experiments.",
+    )
+    parser.add_argument(
         "--collect-activations",
         action="store_true",
         help="Collect baseline forward activations for each model.",
@@ -638,10 +663,12 @@ def run_model(model, device, args, model_name) -> Analyzing_data | None:
         print(f"ImageNet val top-5: {metrics['top5']:.2%}")
         return
 
+    train_loader = None
     val_loader = None
+    activation_batches = None
     if args.imagenet_root is not None:
         train_loader, val_loader = build_imagenet_loaders(
-            args.imagenet_root, 
+            args.imagenet_root,
             model,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
@@ -663,6 +690,8 @@ def run_model(model, device, args, model_name) -> Analyzing_data | None:
             image_size=args.image_size,
             device=device,
         )
+    if args.fine_tune_epochs > 0 and train_loader is None:
+        raise ValueError("--fine-tune-epochs requires --imagenet-root")
 
     baseline_metrics = None
     if val_loader is not None and not args.skip_baseline_eval:
@@ -727,8 +756,9 @@ def run_model(model, device, args, model_name) -> Analyzing_data | None:
         f"({int(pruning_stats['pruned_parameters'])}/"
         f"{int(pruning_stats['total_prunable_parameters'])})"
     )
+    pruned_metrics = None
     if val_loader is not None:
-        metrics = evaluate_topk(
+        pruned_metrics = evaluate_topk(
             model,
             val_loader,
             device,
@@ -737,13 +767,13 @@ def run_model(model, device, args, model_name) -> Analyzing_data | None:
         if baseline_metrics is not None:
             print(
                 "ImageNet val top-1: "
-                f"{baseline_metrics['top1']:.2%} -> {metrics['top1']:.2%} "
-                f"({metrics['top1'] - baseline_metrics['top1']:+.2%})"
+                f"{baseline_metrics['top1']:.2%} -> {pruned_metrics['top1']:.2%} "
+                f"({pruned_metrics['top1'] - baseline_metrics['top1']:+.2%})"
             )
             print(
                 "ImageNet val top-5: "
-                f"{baseline_metrics['top5']:.2%} -> {metrics['top5']:.2%} "
-                f"({metrics['top5'] - baseline_metrics['top5']:+.2%})"
+                f"{baseline_metrics['top5']:.2%} -> {pruned_metrics['top5']:.2%} "
+                f"({pruned_metrics['top5'] - baseline_metrics['top5']:+.2%})"
             )
             print("========== Complexity ==========")
 
@@ -781,8 +811,52 @@ def run_model(model, device, args, model_name) -> Analyzing_data | None:
                 f"{pruned_latency:.2f} ms"
             )
         else:
-            print(f"ImageNet val top-1: {metrics['top1']:.2%}")
-            print(f"ImageNet val top-5: {metrics['top5']:.2%}")
+            print(f"ImageNet val top-1: {pruned_metrics['top1']:.2%}")
+            print(f"ImageNet val top-5: {pruned_metrics['top5']:.2%}")
+
+    if args.fine_tune_epochs > 0:
+        print("========== Fine-tuning ==========")
+        fine_tune_history = fine_tune_model(
+            model,
+            train_loader,
+            nn.CrossEntropyLoss(),
+            device,
+            FineTuningConfig(
+                epochs=args.fine_tune_epochs,
+                lr=args.fine_tune_lr,
+                weight_decay=args.fine_tune_weight_decay,
+                max_batches_per_epoch=args.fine_tune_batches,
+            ),
+        )
+        for epoch_stats in fine_tune_history:
+            print(
+                "Fine-tune epoch "
+                f"{int(epoch_stats['epoch'])}/{args.fine_tune_epochs}: "
+                f"loss={epoch_stats['loss']:.4f}, "
+                f"top-1={epoch_stats['top1']:.2%}"
+            )
+        if val_loader is not None:
+            fine_tuned_metrics = evaluate_topk(
+                model,
+                val_loader,
+                device,
+                max_batches=args.eval_batches,
+            )
+            print("========== After Fine-tuning ==========")
+            if pruned_metrics is not None:
+                print(
+                    "ImageNet val top-1: "
+                    f"{pruned_metrics['top1']:.2%} -> {fine_tuned_metrics['top1']:.2%} "
+                    f"({fine_tuned_metrics['top1'] - pruned_metrics['top1']:+.2%})"
+                )
+                print(
+                    "ImageNet val top-5: "
+                    f"{pruned_metrics['top5']:.2%} -> {fine_tuned_metrics['top5']:.2%} "
+                    f"({fine_tuned_metrics['top5'] - pruned_metrics['top5']:+.2%})"
+                )
+            else:
+                print(f"ImageNet val top-1: {fine_tuned_metrics['top1']:.2%}")
+                print(f"ImageNet val top-5: {fine_tuned_metrics['top5']:.2%}")
 
     return Analyzing_data(weights=weights, activations=activations)
 
