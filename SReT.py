@@ -75,6 +75,7 @@ class Group_Attention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
+        self.last_attention = None
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
@@ -93,6 +94,7 @@ class Group_Attention(nn.Module):
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
+        self.last_attention = attn.detach()
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(2, 3).reshape(B, num_groups, N // num_groups, C)
@@ -255,6 +257,7 @@ class SReT(nn.Module):
                                           patch_size, stride, padding)
 
         self.pos_drop = nn.Dropout(p=drop_rate)
+        self.current_loop = 0
 
         self.transformers = nn.ModuleList([])
         self.pools = nn.ModuleList([])

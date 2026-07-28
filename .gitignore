@@ -5,3 +5,5 @@ pre-trained/
 __pycache__/
 .venv/
 analysis-data/
+figures/
+outputs/
