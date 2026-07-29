@@ -342,7 +342,7 @@ def build_imagenet_loaders(
     }
     train_loader: DataLoader[Batch] = DataLoader(
         train_dataset,
-        shuffle=False,
+        shuffle=True,
         drop_last=True,
         **loader_kwargs,
     )
@@ -352,7 +352,13 @@ def build_imagenet_loaders(
         drop_last=False,
         **loader_kwargs,
     )
-    return train_loader, val_loader
+    test_loader: DataLoader[Batch] = DataLoader(
+        val_dataset,
+        shuffle=False,
+        drop_last=False,
+        **loader_kwargs,
+    )
+    return train_loader, val_loader, test_loader
 
 
 def build_imagenet_val_loader(
