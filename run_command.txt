@@ -1,0 +1,2 @@
+uv run python main_measure.py   --model-name-normal vit_base_patch16_224 --model-name-comp-loop sret_s --model-name-loop loop_vit  --image-size 224   --batch-size 32   --calibration-batches 16   --taylor-prune-amount 0.3   --fine-tune-epochs 20   --fine-tune-b
+atches 32   --fine-tune-lr 1e-6   --eval-batches 32   --num-workers 1   --imagenet-root /home/fujitako/ViT_vs_LOOP_with_pruning/data/ImageNet

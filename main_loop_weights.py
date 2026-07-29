@@ -11,7 +11,8 @@ from SReT import SReT_S
 from analysis.activation import ActivationRecorder
 from analysis.attention import plot_attention
 from analysis.gradients import register_gradient_hooks
-from analysis.hooks import register_activation_hooks, register_attention_hooks, remove_hooks
+from analysis.hooks import register_activation_hooks, register_attention_hooks, register_mlp_activation_hooks, remove_hooks
+from analysis.mlp_activation_analyzer import MLPActivationAnalyzer
 from analysis.recorder import AnalysisRecorder
 from analysis.weight_change import compute_weight_change
 
@@ -59,11 +60,13 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     recorder = AnalysisRecorder(output_dir=output_dir)
     activation_recorder = ActivationRecorder(output_dir=output_dir / "activation")
+    mlp_analyzer = MLPActivationAnalyzer()
 
     handles = []
     handles.extend(register_activation_hooks(model, recorder, activation_recorder))
     handles.extend(register_attention_hooks(model, recorder))
     handles.extend(register_gradient_hooks(model, recorder))
+    handles.extend(register_mlp_activation_hooks(model, mlp_analyzer))
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     loss_fn = nn.CrossEntropyLoss()
@@ -96,6 +99,8 @@ def main() -> None:
 
     compute_weight_change(weight_before, model.state_dict(), recorder)
     recorder.save_weight_changes()
+
+    torch.save(dict(mlp_analyzer.data), output_dir / "mlp_activation.pt")
 
     remove_hooks(handles)
 

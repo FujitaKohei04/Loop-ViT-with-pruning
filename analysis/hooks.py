@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
+import torch
 from torch import nn
 
 from .recorder import AnalysisRecorder
@@ -48,6 +49,33 @@ def register_attention_hooks(model: nn.Module, recorder: AnalysisRecorder) -> li
     for name, module in model.named_modules():
         if isinstance(module, Group_Attention):
             handles.append(module.register_forward_hook(make_hook(name)))
+
+    return handles
+
+
+def register_mlp_activation_hooks(model: nn.Module, analyzer) -> list:
+    handles = []
+
+    def make_input_hook(layer_name: str):
+        def hook(_module: nn.Module, inputs, _outputs):
+            loop = getattr(model, "current_loop", -1)
+            analyzer.save(int(loop), f"{layer_name}_input", inputs[0])
+
+        return hook
+
+    def make_output_hook(layer_name: str):
+        def hook(_module: nn.Module, _inputs, outputs):
+            loop = getattr(model, "current_loop", -1)
+            analyzer.save(int(loop), f"{layer_name}_output", outputs)
+
+        return hook
+
+    for name, module in model.named_modules():
+        if isinstance(module, Mlp):
+            handles.append(module.fc1.register_forward_hook(make_input_hook("fc1")))
+            handles.append(module.fc2.register_forward_hook(make_output_hook("fc2")))
+            if hasattr(module, "act"):
+                handles.append(module.act.register_forward_hook(make_output_hook("gelu")))
 
     return handles
 
