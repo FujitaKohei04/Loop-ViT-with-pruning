@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Literal
 
-import torch
-from torch import nn
 import timm
+import torch
 from timm.layers import trunc_normal_
 from timm.models import register_model
 from timm.models.vision_transformer import global_pool_nlc
-
+from torch import nn
 
 FinetuneMode = Literal["head", "head-norm", "loop", "all"]
 

@@ -7,14 +7,18 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from SReT import SReT_S
 from analysis.activation import ActivationRecorder
-from analysis.attention import plot_attention
 from analysis.gradients import register_gradient_hooks
-from analysis.hooks import register_activation_hooks, register_attention_hooks, register_mlp_activation_hooks, remove_hooks
+from analysis.hooks import (
+    register_activation_hooks,
+    register_attention_hooks,
+    register_mlp_activation_hooks,
+    remove_hooks,
+)
 from analysis.mlp_activation_analyzer import MLPActivationAnalyzer
 from analysis.recorder import AnalysisRecorder
 from analysis.weight_change import compute_weight_change
+from SReT import SReT_S
 
 
 def parse_args() -> argparse.Namespace:

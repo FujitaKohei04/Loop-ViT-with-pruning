@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import List
-
 import torch
 from torch import nn
 
 from .recorder import AnalysisRecorder
 
 
-def register_gradient_hooks(model: nn.Module, recorder: AnalysisRecorder) -> List[object]:
+def register_gradient_hooks(model: nn.Module, recorder: AnalysisRecorder) -> list[object]:
     handles = []
 
     for name, parameter in model.named_parameters():

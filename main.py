@@ -1,27 +1,25 @@
 from __future__ import annotations
 
 import argparse
+import random
+import time
+from collections.abc import Iterable
+from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Iterable
 
+import numpy as np
+import timm
 import torch
+from ptflops import get_model_complexity_info
+from timm.data import create_transform, resolve_model_data_config
 from torch import nn
 from torch.nn.utils import prune
 from torch.utils.data import DataLoader
-import timm
-from timm.data import create_transform, resolve_model_data_config
 
+import SReT
 from fine_tuning import FineTuningConfig, fine_tune_model
 from imagenet_labels import remap_imagenet_targets
-import SReT
-
-import random
-import numpy as np
-
-from ptflops import get_model_complexity_info
-import time
 
 Batch = tuple[torch.Tensor, torch.Tensor]
 

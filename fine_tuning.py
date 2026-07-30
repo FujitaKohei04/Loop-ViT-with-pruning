@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import islice
-from typing import Iterable
 
 import torch
 from torch import nn

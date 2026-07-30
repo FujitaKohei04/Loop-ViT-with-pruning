@@ -7,3 +7,4 @@ __pycache__/
 analysis-data/
 figures/
 outputs/
+prun_acc_figure/

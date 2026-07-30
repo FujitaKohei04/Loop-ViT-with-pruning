@@ -1,8 +1,10 @@
 import argparse
+
 import timm
 import torch
-import SReT
+
 import LoopViT
+import SReT
 
 
 def parse_args() -> argparse.Namespace:

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from typing import List
-
-import torch
 from torch import nn
 
-from .recorder import AnalysisRecorder
 from .activation import ActivationRecorder
+from .recorder import AnalysisRecorder
 
 try:
     from SReT import Group_Attention, Mlp, Transformer_Block
@@ -80,6 +77,6 @@ def register_mlp_activation_hooks(model: nn.Module, analyzer) -> list:
     return handles
 
 
-def remove_hooks(handles: List[object]) -> None:
+def remove_hooks(handles: list[object]) -> None:
     for handle in handles:
         handle.remove()

@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from typing import Iterable
-
 import torch
-from torch import nn
 
 from .recorder import AnalysisRecorder
 

@@ -10,20 +10,18 @@
 # Ross Wightman
 # Apache License v2.0
 
+from functools import partial
+
 import torch
 from einops import rearrange
-from torch import nn
-import math
-
-from functools import partial
-from timm.models.layers import trunc_normal_
-from timm.models.layers import DropPath, to_2tuple, lecun_normal_
+from timm.models.layers import DropPath, trunc_normal_
 from timm.models.registry import register_model
+from torch import nn
 
 
 class LearnableCoefficient(nn.Module):
     def __init__(self):
-        super(LearnableCoefficient, self).__init__()
+        super().__init__()
         self.bias = nn.Parameter(torch.ones(1), requires_grad=True)
 
     def forward(self, x):
@@ -114,7 +112,7 @@ class Transformer_Block(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, base_dim, depth, recursive_num, heads, mlp_ratio, np_mlp_ratio,
                  drop_rate=.0, attn_drop_rate=.0, drop_path_prob=None):
-        super(Transformer, self).__init__()
+        super().__init__()
         self.layers = nn.ModuleList([])
         embed_dim = base_dim * heads
 
@@ -163,7 +161,7 @@ class Transformer(nn.Module):
 class conv_head_pooling(nn.Module):
     def __init__(self, in_feature, out_feature, stride,
                  padding_mode='zeros'):
-        super(conv_head_pooling, self).__init__()
+        super().__init__()
 
         self.conv = nn.Conv2d(in_feature, out_feature, kernel_size=stride + 1,
                               padding=stride // 2, stride=stride,
@@ -178,7 +176,7 @@ class conv_head_pooling(nn.Module):
 class conv_embedding(nn.Module):
     def __init__(self, in_channels, out_channels, patch_size,
                  stride, padding):
-        super(conv_embedding, self).__init__()
+        super().__init__()
         norm_layer = nn.BatchNorm2d
         self.conv1 = nn.Conv2d(in_channels, int(out_channels/2), kernel_size=3,
                               stride=2, padding=1, bias=True)
@@ -213,7 +211,7 @@ class RecursiveTransformer(nn.Module):
     def __init__(self, image_size, patch_size, stride, base_dims, depth, recursive_num, heads,
                  mlp_ratio, np_mlp_ratio, num_classes=1000, in_chans=3,
                  attn_drop_rate=.0, drop_rate=.0, drop_path_rate=.0):
-        super(RecursiveTransformer, self).__init__()
+        super().__init__()
 
         total_block = sum(depth)
         padding = 0

@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from torch import nn
 
-from .utils import ensure_dir, write_csv
+from .utils import write_csv
 
 
 class MLPActivationAnalyzer:

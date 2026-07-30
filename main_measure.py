@@ -2,29 +2,27 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
+import time
+from collections.abc import Iterable
+from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Iterable
 
+import numpy as np
+import timm
 import torch
+from ptflops import get_model_complexity_info
+from timm.data import create_transform, resolve_model_data_config
 from torch import nn
 from torch.nn.utils import prune
 from torch.utils.data import DataLoader
-import timm
-from timm.data import create_transform, resolve_model_data_config
 
 import LoopViT
 import SReT
-
-import random
-import numpy as np
-
+from analysis.statistics import collect_weights
 from fine_tuning import FineTuningConfig, fine_tune_model
 from imagenet_labels import remap_imagenet_targets
-from analysis.statistics import collect_weights
-from ptflops import get_model_complexity_info
-import time
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path("/tmp") / "matplotlib-cache"))
 import matplotlib.pyplot as plt
