@@ -27,7 +27,7 @@ class Config:
     taylor_prune_amount: float = 0.2  # Amount of pruning for Taylor pruning
     prune_bias: bool = False  # Whether to prune bias parameters
     eval_batches: int = 32  # Number of batches for evaluation
-    model_name: str = "vit_base_patch16_224"
+    model_name: str = "sret_s"
 
 def print_config() -> None:
     print("=== Setting ===")
@@ -105,7 +105,7 @@ def run_model(
     print(f"ImageNet val top-5: {pruned_metrics['top5']:.2%}")
     print(f"parameter: {pruning_stats['total_prunable_parameters']} -> {pruning_stats['total_prunable_parameters'] - pruning_stats['pruned_parameters']}")
 
-    return pruning_rate, pruned_metrics['top1'], pruned_metrics['top5']
+    return pruning_stats['total_prunable_parameters'] - pruning_stats['pruned_parameters'], pruned_metrics['top1'], pruned_metrics['top5']
         
 def compare_acc_by_each_pruning() -> None:
     set_seed(42)
