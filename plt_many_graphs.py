@@ -1,31 +1,42 @@
+import os
+from pathlib import Path
+import pickle
+
 import matplotlib.pyplot as plt
 import numpy as np
 
-# データの設定
-data1 = np.load("./prun_acc_figure/sret_s/data.npy")
-data2 = np.load("./prun_acc_figure/vit_base_patch16_224/data.npy")
-x1 = data1[0][0]
-x2 = data2[0][0]
-y1 = data1[2][0]  # データ1
-y2 = data2[2][0]  # データ2
+x_l = "pruning_rate" # pruning_rate, parameter 
+y_l = "imagenet_top1" # imagenet_top1, imagenet_top5
 
-plt.figure(figsize=(12, 4))
+def get_d(path):
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+# get data
+data = {}
+for sdir in Path("./prun_acc_figure").iterdir():
+    if sdir.is_dir():
+        data[sdir.name] = get_d(os.path.join(sdir, "data.pkl"))
+
+# plt setting
+plt.figure(figsize=(18, 6))
 plt.ticklabel_format(style='plain', useOffset=False, axis='x')
+plt.title(f"compare models by {x_l}")
+plt.grid(True)
+# plt.xlim(0, 6000000)
 
-# 1本目の折れ線グラフ
-plt.plot(x1, y1, label="SReT_S", marker="o", color="blue")
+# plt the data
+for model, d in data.items():
+    plt.xlabel(x_l)
+    plt.ylabel(y_l)
+    plt.plot(
+        d["x"][x_l],
+        d["y"][y_l],
+        label=model,
+        marker="o"
+    )
 
-# 2本目の折れ線グラフ（上から重ねる）
-plt.plot(x2, y2, label="ViT Base patch16 224", marker="s", color="orange")
-
-
-# グラフのカスタマイズ
-plt.xlabel("parameter")
-plt.ylabel("accuracy")
-plt.title("ImageNet 100 Top 5 Acc")
-plt.legend()  # 凡例（どれがどのラインか）を表示
-plt.grid(True)  # グリッド線を表示
-
-# 保存・表示
-# plt.savefig("stacked_line_chart.png", bbox_inches="tight")
+plt.legend()
+plt.savefig(f"./pru_acc_all_model_figure/graph {x_l} and {y_l}")
 plt.show()

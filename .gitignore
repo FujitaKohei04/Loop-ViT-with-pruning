@@ -8,3 +8,6 @@ analysis-data/
 figures/
 outputs/
 prun_acc_figure/
+playground.py
+activation_weight/
+pru_acc_all_model_figure

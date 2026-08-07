@@ -2,27 +2,29 @@ from __future__ import annotations
 
 import argparse
 import os
-import random
-import time
-from collections.abc import Iterable
-from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
+from dataclasses import dataclass
+from typing import Iterable
 
-import numpy as np
-import timm
 import torch
-from ptflops import get_model_complexity_info
-from timm.data import create_transform, resolve_model_data_config
 from torch import nn
 from torch.nn.utils import prune
 from torch.utils.data import DataLoader
+import timm
+from timm.data import create_transform, resolve_model_data_config
 
 import LoopViT
 import SReT
-from analysis.statistics import collect_weights
+
+import random
+import numpy as np
+
 from fine_tuning import FineTuningConfig, fine_tune_model
 from imagenet_labels import remap_imagenet_targets
+from analysis.statistics import collect_weights
+from ptflops import get_model_complexity_info
+import time
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path("/tmp") / "matplotlib-cache"))
 import matplotlib.pyplot as plt
@@ -175,10 +177,11 @@ def save_tensor_histograms(
 def save_weight_histograms(
     weights: dict[str, torch.Tensor],
     model_name: str,
+    dir_path: Path = None,
 ) -> None:
     save_tensor_histograms(
         weights,
-        Path("analysis-data") / "weights" / model_name,
+        str(dir_path) / Path("analysis-data") / "weights" / model_name,
         prefix="weight",
         xlim=(-1, 1),
         ylim=(0, 100000),
@@ -190,8 +193,9 @@ def save_activation_outputs(
     model_name: str,
     *,
     save_tensors: bool,
+    dir_path: Path = None,
 ) -> None:
-    output_dir = Path("analysis-data") / "activations" / model_name
+    output_dir = str(dir_path) / Path("analysis-data") / "activations" / model_name
     save_tensor_histograms(
         activations,
         output_dir,
@@ -350,13 +354,7 @@ def build_imagenet_loaders(
         drop_last=False,
         **loader_kwargs,
     )
-    test_loader: DataLoader[Batch] = DataLoader(
-        val_dataset,
-        shuffle=False,
-        drop_last=False,
-        **loader_kwargs,
-    )
-    return train_loader, val_loader, test_loader
+    return train_loader, val_loader
 
 
 def build_imagenet_val_loader(
