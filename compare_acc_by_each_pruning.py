@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import SReT
+from dl_dataset.dl_cifar100 import build_cifar_loaders
 from imagenet_labels import remap_imagenet_targets
 from main import evaluate_topk, set_seed
 from main_measure import TaylorPruningConfig, apply_taylor_pruning, build_imagenet_loaders
@@ -23,6 +24,7 @@ Batch = tuple[torch.Tensor, torch.Tensor]
 
 @dataclass(frozen=True)
 class Config:
+    dataset: str = 'cifar100' #imagenet100, cifar100
     image_net_root: str = './data/ImageNet'  # Path to the ImageNet dataset
     batch_size: int = 32  # Batch size for data loaders
     calibration_batches: int = 16  # Number of batches for calibration (used in Taylor pruning)
@@ -95,7 +97,7 @@ def run_model(
 
     # * make data loaders
     train_loader, val_loader = None, None
-    if Config.image_net_root is not None:
+    if Config.dataset == "imagenet100" and Config.image_net_root is not None:
         train_loader, val_loader, _ = build_imagenet_loaders(
             Config.image_net_root,
             model,
@@ -103,7 +105,13 @@ def run_model(
             num_workers=1,
         )
         calibration_batches = islice(train_loader, Config.calibration_batches) #for Taylor pruning
-
+    elif Config.dataset == "cifar100":
+        train_loader, val_loader = build_cifar_loaders(
+            model,
+            batch_size = Config.batch_size,
+            num_workers=1,
+        )
+        calibration_batches = islice(train_loader, Config.calibration_batches) #for Taylor pruning
     else:
         print("Please provide the path to the ImageNet dataset.")
 
