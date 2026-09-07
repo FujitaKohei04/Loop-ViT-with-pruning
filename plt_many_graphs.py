@@ -34,28 +34,32 @@ def plt_data(model, d):
         label=model,
         marker="o"
     )
-    
-# get data
-data = {}
-for sdir in Path("./prun_acc_figure").iterdir():
-    if sdir.is_dir():
-        data[sdir.name] = get_d(os.path.join(sdir, "data.pkl"))
 
-# plt setting
-plt.figure(figsize=(18, 6))
-plt.ticklabel_format(style='plain', useOffset=False, axis='x')
-plt.title(f"compare models by {x_l}")
-plt.grid(True)
-# plt.xlim(0, 6000000)
+def main():
+    # get data`
+    data = {}
+    for sdir in Path("./prun_acc_figure").iterdir():
+        if sdir.is_dir():
+            data[sdir.name] = get_d(os.path.join(sdir, "data.pkl"))
 
-# plt all data
-if(plt_all == True) :
-    for model, d in data.items():
-        plt_data(model, d)
-else:
-    for m in plt_model:
-        plt_data(m, data[m])
+    # plt setting
+    plt.figure(figsize=(18, 6))
+    plt.ticklabel_format(style='plain', useOffset=False, axis='x')
+    plt.title(f"compare models by {x_l}")
+    plt.grid(True)
+    # plt.xlim(0, 6000000)
 
-plt.legend()
-plt.savefig(f"./pru_acc_all_model_figure/graph {x_l} and {y_l}")
-plt.show()
+    # plt all data
+    if(plt_all == True) :
+        for model, d in data.items():
+            plt_data(model, d)
+    else:
+        for m in plt_model:
+            plt_data(m, data[m])
+
+    plt.legend()
+    plt.savefig(f"./pru_acc_all_model_figure/graph {x_l} and {y_l}")
+    plt.show()
+
+if __name__ == "__main__":
+    main()
