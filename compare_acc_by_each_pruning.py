@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import SReT
+import cp_pre_w
 from dl_dataset.dl_cifar100 import build_cifar_loaders
 from imagenet_labels import remap_imagenet_targets
 from main import evaluate_topk, set_seed
@@ -24,15 +25,16 @@ Batch = tuple[torch.Tensor, torch.Tensor]
 
 @dataclass(frozen=True)
 class Config:
-    dataset: str = 'cifar100' #imagenet100, cifar100
+    dataset: str = 'imagenet100' #imagenet100, cifar100
     image_net_root: str = './data/ImageNet'  # Path to the ImageNet dataset
     batch_size: int = 32  # Batch size for data loaders
     calibration_batches: int = 16  # Number of batches for calibration (used in Taylor pruning)
     taylor_prune_amount: float = 0.2  # Amount of pruning for Taylor pruning
     prune_bias: bool = False  # Whether to prune bias parameters
     eval_batches: int = 64  # Number of batches for evaluation
-    model_name: str = "vit_tiny_patch16_224" 
+    model_name: str = "sret_s_no_loop" 
     # sret_s, sret_lt, sret_t
+    # sret_s_no_loop
     # vit_base_patch16_224, vit_small_patch16_224, vit_tiny_patch16_224
 
 @dataclass
@@ -83,6 +85,9 @@ def run_model(
         model = SReT.SReT_LT(pretrained=False)
         model.load_state_dict(torch.load('./pre-trained/SReT_LT_8-4-1_2-1-1.pth', weights_only=False)['model'])
         model.to(device)
+    elif (Config.model_name == "sret_s_no_loop"):
+        model = cp_pre_w.load_SReT_S_no_loop()
+        model.to(device)
     elif (Config.model_name == "vit_base_patch16_224" 
           or Config.model_name == "vit_small_patch16_224"
           or Config.model_name == "vit_tiny_patch16_224"):
@@ -98,7 +103,7 @@ def run_model(
     # * make data loaders
     train_loader, val_loader = None, None
     if Config.dataset == "imagenet100" and Config.image_net_root is not None:
-        train_loader, val_loader, _ = build_imagenet_loaders(
+        train_loader, val_loader = build_imagenet_loaders(
             Config.image_net_root,
             model,
             batch_size = Config.batch_size,

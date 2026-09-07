@@ -352,7 +352,7 @@ class Distilled_SReT(SReT):
 
 
 @register_model
-def SReT_T(pretrained=False, **kwargs):
+def SReT_T_no_loop(pretrained=False, **kwargs):
     model = SReT(
         image_size=224,
         patch_size=16,
@@ -374,7 +374,7 @@ def SReT_T(pretrained=False, **kwargs):
     return model
 
 @register_model
-def SReT_LT(pretrained=False, **kwargs):
+def SReT_LT_no_loop(pretrained=False, **kwargs):
     model = SReT(
         image_size=224,
         patch_size=16,
@@ -395,7 +395,7 @@ def SReT_LT(pretrained=False, **kwargs):
         model.load_state_dict(state_dict['model'])
     return model
 
-def SReT_S(pretrained=False, **kwargs):
+def SReT_S_no_loop(pretrained=False, **kwargs):
     model = SReT(
         image_size=224,
         patch_size=16,
@@ -418,7 +418,7 @@ def SReT_S(pretrained=False, **kwargs):
 
 # Knowledge Distillation
 @register_model
-def SReT_T_distill(pretrained=False, **kwargs):
+def SReT_T_distill_no_loop(pretrained=False, **kwargs):
     model = Distilled_SReT(
         image_size=224,
         patch_size=16,
@@ -440,7 +440,7 @@ def SReT_T_distill(pretrained=False, **kwargs):
     return model
 
 @register_model
-def SReT_LT_distill(pretrained=False, **kwargs):
+def SReT_LT_distill_no_loop(pretrained=False, **kwargs):
     model = Distilled_SReT(
         image_size=224,
         patch_size=16,
