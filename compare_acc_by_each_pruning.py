@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import SReT
+import cp_pre_w
 from dl_dataset.dl_cifar100 import build_cifar_loaders
 from imagenet_labels import remap_imagenet_targets
 from main import evaluate_topk, set_seed
@@ -31,8 +32,9 @@ class Config:
     taylor_prune_amount: float = 0.2  # Amount of pruning for Taylor pruning
     prune_bias: bool = False  # Whether to prune bias parameters
     eval_batches: int = 64  # Number of batches for evaluation
-    model_name: str = "sret_t" 
+    model_name: str = "sret_s_no_loop" 
     # sret_s, sret_lt, sret_t
+    # sret_s_no_loop
     # vit_base_patch16_224, vit_small_patch16_224, vit_tiny_patch16_224
 
 @dataclass
@@ -82,6 +84,9 @@ def run_model(
     elif (Config.model_name == "sret_lt"):
         model = SReT.SReT_LT(pretrained=False)
         model.load_state_dict(torch.load('./pre-trained/SReT_LT_8-4-1_2-1-1.pth', weights_only=False)['model'])
+        model.to(device)
+    elif (Config.model_name == "sret_s_no_loop"):
+        model = cp_pre_w.load_SReT_S_no_loop()
         model.to(device)
     elif (Config.model_name == "vit_base_patch16_224" 
           or Config.model_name == "vit_small_patch16_224"
