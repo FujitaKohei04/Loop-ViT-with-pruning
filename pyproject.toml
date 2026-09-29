@@ -8,6 +8,7 @@ dependencies = [
     "einops>=0.8.2",
     "matplotlib>=3.11.1",
     "ptflops>=0.7.5",
+    "scikit-image>=0.26.0",
     "timm",
 ]
 

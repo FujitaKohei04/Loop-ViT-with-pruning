@@ -3,6 +3,8 @@ import sys
 from matplotlib import pyplot as plt
 from matplotlib import colors as mcolors
 from torch import mean
+from skimage.measure import block_reduce
+import numpy as np
 
 from plt_many_graphs import get_d
 
@@ -33,6 +35,8 @@ data_path = f"./TaylorImportanceInLoop/{time}/{model}/data.pkl"
 name_layer1 = 'transformers.1.blocks.0.mlp.fc2'
 name_layer2 = 'transformers.1.blocks.2.mlp.fc2'
 
+pooling_size = (10, 10)
+
 data = get_d(data_path)
 data1 = data["TaylorImportance"][(name_layer1, 'weight')]
 data2 = data["TaylorImportance"][(name_layer2, 'weight')]
@@ -44,13 +48,16 @@ d = op_diff(diff, data1, data2).detach().cpu().numpy()
 
 plt.subplots(figsize=(10,10))
 
+# pooling (np.max or np.average)
+d_pool = block_reduce(d, pooling_size, func=np.mean)
+
 # max value for imshow()
-m, mi = abs(d.max()), abs(d.min())
+m, mi = abs(d_pool.max()), abs(d_pool.min())
 if m < mi :
     m = mi
 
 plt.imshow(
-    d, 
+    d_pool, 
     cmap="bwr",
     norm=mcolors.TwoSlopeNorm(vcenter=0, vmin=-1*m, vmax=m)
     )
@@ -61,6 +68,6 @@ print(d.max())
 print(d.min())
 
 plt.colorbar()
-plt.title(f"Taylor Importance Variation In Loop\n{time} {model} {diff_dict[diff]}\n{name_layer2} - {name_layer1}\nmax = {d.max():.8}, min = {d.min():.8}")
-plt.savefig(f"./TaylorImportanceInLoop/{time}/{model}/"+f"{diff_dict[diff]}_{name_layer1}_{name_layer2}".replace(".", "-"))
+plt.title(f"Taylor Importance Variation In Loop\n{time} {model} {diff_dict[diff]}\n{name_layer2} - {name_layer1}\nmax = {d.max():.8}, min = {d.min():.8}\n_poolsize{pooling_size}")
+plt.savefig(f"./TaylorImportanceInLoop/{time}/{model}/"+f"{diff_dict[diff]}_{name_layer1}_{name_layer2}_poolsize{pooling_size}".replace(".", "-"))
 plt.show()
