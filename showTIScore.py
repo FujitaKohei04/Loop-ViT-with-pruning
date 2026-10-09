@@ -1,3 +1,4 @@
+import os
 import sys
 
 from matplotlib import pyplot as plt
@@ -37,6 +38,11 @@ def norm_diff(data1, data2, norm=1):
     l = len(data1)
     return arr[l:] - arr[:l]
 
+def save_image(save_dir, file_name):
+    # create a new directory (if not exists) and save the current figure in it
+    os.makedirs(save_dir, exist_ok=True)
+    plt.savefig(os.path.join(save_dir, file_name.replace(".", "-")))
+
 diff = -1
 diff_dict = {
     -1 : "None",
@@ -57,17 +63,17 @@ norm_dict = {
 time = "1788760704.3488271"
 model = "sret_s_no_loop"
 data_path = f"./TaylorImportanceInLoop/{time}/{model}/data.pkl"
-layer_dict = {
-    '.attn.qkv',
-    '.attn.proj',
-    '.mlp.fc1',
-    '.mlp.fc2'
-}
+layer_dict = [
+    'attn.qkv',
+    'attn.proj',
+    'mlp.fc1',
+    'mlp.fc2'
+]
 # name_layer1 = 'transformers.1.blocks.0.attn.qkv'
 # name_layer2 = 'transformers.1.blocks.2.attn.qkv'
 
-name_layer1 = 'transformers.1.blocks.0'
-name_layer2 = 'transformers.1.blocks.2'
+name_layer1 = 'transformers.1.blocks.0.'
+name_layer2 = 'transformers.1.blocks.8.'
 
 pool_func = "max"
 pool_func_dict = {
@@ -78,60 +84,67 @@ pool_func_dict = {
 pooling_size = (1, 1)
 
 data = get_d(data_path)
-data1 = data["TaylorImportance"][(name_layer1, 'weight')]
-data2 = data["TaylorImportance"][(name_layer2, 'weight')]
 
-data1 = data1.detach().cpu().numpy()
-data2 = data2.detach().cpu().numpy()
+# save directory (name without layer name such as attn-proj)
+save_dir = f"./TaylorImportanceInLoop/{time}/{model}/" + f"{diff_dict[diff]}_{norm_dict[norm]}_{name_layer1}_{name_layer2}_poolsize{pooling_size}_pool-func_{pool_func}".replace(".", "-")
 
-if(data1.shape != data2.shape):
-    sys.exit(1)
+for layer in layer_dict:
+    data1 = data["TaylorImportance"][(name_layer1 + layer, 'weight')]
+    data2 = data["TaylorImportance"][(name_layer2 + layer, 'weight')]
 
-if(diff > -1):
-    d = op_diff(diff, data1, data2)
-    # dl = len(d)//3
-    # d = d[dl:dl*2]
+    data1 = data1.detach().cpu().numpy()
+    data2 = data2.detach().cpu().numpy()
 
-    fig, ax = plt.subplots(figsize=(10,10))
+    if(data1.shape != data2.shape):
+        sys.exit(1)
 
-    # pooling (np.max or np.average)
-    d_pool = block_reduce(d, pooling_size, func=pool_func_dict[pool_func])
+    cell_size = 0.04
+    nrow, ncol = data1.shape
+    plt.subplots(figsize=(ncol * cell_size + 1.5, nrow * cell_size + 1.5), constrained_layout=True)
 
-    # max value for imshow()
-    m, mi = abs(d_pool.max()), abs(d_pool.min())
-    if m < mi :
-        m = mi
+    if(diff > -1):
+        d = op_diff(diff, data1, data2)
+        # dl = len(d)//3
+        # d = d[dl:dl*2]
 
-    plt.imshow(
-        d_pool, 
-        cmap="bwr",
-        norm=mcolors.TwoSlopeNorm(vcenter=0, vmin=-1, vmax=1)
-    )
+        # pooling (np.max or np.average)
+        d_pool = block_reduce(d, pooling_size, func=pool_func_dict[pool_func])
 
-elif(norm > -1):
-    d = op_norm(norm, data1).detach().cpu().numpy()
-    
-    plt.subplots(figsize=(10,10))
+        # max value for imshow()
+        m, mi = abs(d_pool.max()), abs(d_pool.min())
+        if m < mi :
+            m = mi
 
-    # pooling (np.max or np.average)
-    d_pool = block_reduce(d, pooling_size, func=np.max)
+        plt.imshow(
+            d_pool, 
+            cmap="bwr",
+            norm=mcolors.TwoSlopeNorm(vcenter=0, vmin=-1, vmax=1)
+        )
+        layer_title = f"{name_layer2 + layer} - {name_layer1 + layer}"
 
-    plt.imshow(
-        d_pool, 
-        cmap="Greys",
-        vmin=0,
-        vmax=1
-    )
+    elif(norm > -1):
+        d = op_norm(norm, data1)
 
+        # pooling (np.max or np.average)
+        d_pool = block_reduce(d, pooling_size, func=np.max)
 
-print(data1.mean())
-print(data2.mean())
-print(d.max())
-print(d.min())
+        plt.imshow(
+            d_pool, 
+            cmap="Greys",
+            vmin=0,
+            vmax=1
+        )
+        layer_title = f"{name_layer1 + layer}"
 
+    print(layer)
+    print(data1.mean())
+    print(data2.mean())
+    print(d.max())
+    print(d.min())
 
-plt.colorbar()
-# plt.suptitle(f"Taylor Importance Variation In Loop", fontweight="bold")
-plt.title(f"Taylor Importance Variation In Loop\n{time} {model} {diff_dict[diff]}\n{name_layer2} - {name_layer1}\nmax = {d.max():.8}, min = {d.min():.8}\n_poolsize{pooling_size}_pool-func_{pool_func}")
-plt.savefig(f"./TaylorImportanceInLoop/{time}/{model}/"+f"{diff_dict[diff]}_{name_layer1}_{name_layer2}_poolsize{pooling_size}_pool-func_{pool_func}".replace(".", "-"))
-plt.show()
+    plt.colorbar()
+    # plt.suptitle(f"Taylor Importance Variation In Loop", fontweight="bold")
+    plt.title(f"Taylor Importance Variation In Loop\n{time} {model} {diff_dict[diff]} {norm_dict[norm]}\n{layer_title}\nmax = {d.max():.8}, min = {d.min():.8}\n_poolsize{pooling_size}_pool-func_{pool_func}")
+    save_image(save_dir, layer)
+
+# plt.show()

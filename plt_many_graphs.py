@@ -9,8 +9,8 @@ x_l = "pruning_rate" # pruning_rate, parameter
 y_l = "imagenet_top1" # imagenet_top1, imagenet_top5
 plt_all = False
 plt_model = [
-    "sret_s",
-    "sret_s_no_loop",
+    "vit_small_patch16_224",
+    "loop_vit_large_lora",
 ]
 # "sret_lt",
 # "sret_s",

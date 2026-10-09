@@ -19,6 +19,7 @@ from dl_dataset.dl_cifar100 import build_cifar_loaders
 from imagenet_labels import remap_imagenet_targets
 from main import evaluate_topk, set_seed
 from main_measure import TaylorPruningConfig, apply_taylor_pruning, build_imagenet_loaders
+from models.T_LViT import T_LViT
 
 Batch = tuple[torch.Tensor, torch.Tensor]
 
@@ -27,12 +28,12 @@ Batch = tuple[torch.Tensor, torch.Tensor]
 class Config:
     dataset: str = 'imagenet100' #imagenet100, cifar100
     image_net_root: str = './data/ImageNet'  # Path to the ImageNet dataset
-    batch_size: int = 32  # Batch size for data loaders
+    batch_size: int = 16  # Batch size for data loaders
     calibration_batches: int = 16  # Number of batches for calibration (used in Taylor pruning)
     taylor_prune_amount: float = 0.2  # Amount of pruning for Taylor pruning
     prune_bias: bool = False  # Whether to prune bias parameters
     eval_batches: int = 64  # Number of batches for evaluation
-    model_name: str = "sret_s_no_loop" 
+    model_name: str = "loop_vit_large_lora" 
     # sret_s, sret_lt, sret_t
     # sret_s_no_loop
     # vit_base_patch16_224, vit_small_patch16_224, vit_tiny_patch16_224
@@ -96,9 +97,12 @@ def run_model(
             pretrained=True,
         ).to(device)
     elif (Config.model_name == "loop_vit_large_lora"):
-        model = None
+        model, _, _ = T_LViT.load_checkpoint(
+            checkpoint_path="./pre-trained/vit2_select_interleaved.pt",
+            device=device
+        )
     else:
-        print("the model name is not found.")
+        raise ValueError(f"the model name is not found: {Config.model_name}")
 
     # * make data loaders
     train_loader, val_loader = None, None
