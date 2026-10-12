@@ -16,6 +16,7 @@ from tqdm import tqdm
 import SReT
 import cp_pre_w
 from dl_dataset.dl_cifar100 import build_cifar_loaders
+from fine_tuning_for_imgnet100 import load_fine_tuned
 from imagenet_labels import remap_imagenet_targets
 from main import evaluate_topk, set_seed
 from main_measure import TaylorPruningConfig, apply_taylor_pruning, build_imagenet_loaders
@@ -28,14 +29,16 @@ Batch = tuple[torch.Tensor, torch.Tensor]
 class Config:
     dataset: str = 'imagenet100' #imagenet100, cifar100
     image_net_root: str = './data/ImageNet'  # Path to the ImageNet dataset
-    batch_size: int = 16  # Batch size for data loaders
+    batch_size: int = 32  # Batch size for data loaders
     calibration_batches: int = 16  # Number of batches for calibration (used in Taylor pruning)
+    calibration_seed: int = 42  # Seed of the calibration shuffle (same images for every pruning rate)
     taylor_prune_amount: float = 0.2  # Amount of pruning for Taylor pruning
     prune_bias: bool = False  # Whether to prune bias parameters
-    eval_batches: int = 64  # Number of batches for evaluation
-    model_name: str = "loop_vit_large_lora" 
+    eval_batches: int = None  # Number of batches for evaluation, None is all
+    model_name: str = "sret_s_fine_tuned" 
     # sret_s, sret_lt, sret_t
     # sret_s_no_loop
+    # sret_s_fine_tuned
     # vit_base_patch16_224, vit_small_patch16_224, vit_tiny_patch16_224
 
 @dataclass
@@ -52,6 +55,19 @@ def print_config() -> None:
     print(f"prune bias: {Config.prune_bias}")
     print(f"eval batches: {Config.eval_batches}")
     print()
+
+def make_calibration_batches(train_loader: DataLoader) -> islice:
+    """Shuffled calibration batches for Taylor pruning, drawn from all classes.
+    The fixed seed gives the same images for every pruning rate."""
+    loader = DataLoader(
+        train_loader.dataset,
+        batch_size=Config.batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=1,
+        generator=torch.Generator().manual_seed(Config.calibration_seed),
+    )
+    return islice(loader, Config.calibration_batches)
 
 def plt_pru_acc(
         pruning_rate: list[float],
@@ -89,6 +105,8 @@ def run_model(
     elif (Config.model_name == "sret_s_no_loop"):
         model = cp_pre_w.load_SReT_S_no_loop()
         model.to(device)
+    elif (Config.model_name == "sret_s_fine_tuned"):
+        model, _ = load_fine_tuned("./fine-tuned/sret_s_imagenet100_head.pth", device=device)
     elif (Config.model_name == "vit_base_patch16_224" 
           or Config.model_name == "vit_small_patch16_224"
           or Config.model_name == "vit_tiny_patch16_224"):
@@ -113,14 +131,18 @@ def run_model(
             batch_size = Config.batch_size,
             num_workers=1,
         )
-        calibration_batches = islice(train_loader, Config.calibration_batches) #for Taylor pruning
+        if Config.model_name.endswith("_fine_tuned"):
+            # 100-class head: keep the ImageFolder labels 0..99 (undo the remap to ImageNet-1k indices)
+            train_loader.dataset.target_transform = None
+            val_loader.dataset.target_transform = None
+        calibration_batches = make_calibration_batches(train_loader) #for Taylor pruning
     elif Config.dataset == "cifar100":
         train_loader, val_loader = build_cifar_loaders(
             model,
             batch_size = Config.batch_size,
             num_workers=1,
         )
-        calibration_batches = islice(train_loader, Config.calibration_batches) #for Taylor pruning
+        calibration_batches = make_calibration_batches(train_loader) #for Taylor pruning
     else:
         print("Please provide the path to the ImageNet dataset.")
 
