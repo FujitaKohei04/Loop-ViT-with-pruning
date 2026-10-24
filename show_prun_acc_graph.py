@@ -45,11 +45,11 @@ MODEL_STYLES: dict[str, dict[str, str]] = {
     "sret_t":                {"family": "sret", "linestyle": "--", "marker": "s", "label": "SReT-T",            "short": "t"},
     "sret_lt":               {"family": "sret", "linestyle": ":",  "marker": "^", "label": "SReT-LT",           "short": "lt"},
     "sret_s_no_loop":        {"family": "sret", "linestyle": "-.", "marker": "D", "label": "SReT-S (no loop)",  "short": "nl"},
-    "sret_s_f":              {"family": "sret", "linestyle": "-.", "marker": "D", "label": "SReT-S (fine-tuned)",  "short": "sf"},
-    "vit_base_patch16_224":  {"family": "vit",  "linestyle": "-",  "marker": "o", "label": "ViT-B",          "short": "b"},
-    "vit_small_patch16_224": {"family": "vit",  "linestyle": "--", "marker": "s", "label": "ViT-S",          "short": "s"},
-    "vit_tiny_patch16_224":  {"family": "vit",  "linestyle": ":",  "marker": "^", "label": "ViT-Ti",         "short": "ti"},
-    "loop_vit_large_lora":   {"family": "vit",  "linestyle": "-.", "marker": "D", "label": "Loop ViT-L (LoRA)", "short": "loopl"},
+    "sret_s_fine_tuned":     {"family": "sret", "linestyle": "-.", "marker": "*", "label": "SReT-S (fine-tuned)",  "short": "sf"},
+    "vit_base_patch16_224":  {"family": "vit",  "linestyle": "-.",  "marker": "o", "label": "ViT-B",          "short": "b"},
+    "vit_small_patch16_224": {"family": "vit",  "linestyle": "-", "marker": "s", "label": "ViT-S",          "short": "s"},
+    "vit_tiny_patch16_224":  {"family": "vit",  "linestyle": "--",  "marker": "^", "label": "ViT-Ti",         "short": "ti"},
+    "loop_vit_large_lora":   {"family": "vit",  "linestyle": ":", "marker": "D", "label": "Loop ViT-L", "short": "loopl"},
 }
 # Line styles / markers cycled for models not registered in MODEL_STYLES.
 FALLBACK_LINESTYLES = [(0, (5, 1)), (0, (3, 1, 1, 1, 1, 1)), (0, (1, 3))]
@@ -57,8 +57,8 @@ FALLBACK_MARKERS = ["v", "P", "X", "*"]
 
 # Axis definitions: display label (used in the graph) and file label (used in the file name).
 X_AXES: dict[str, dict[str, str]] = {
-    "remaining": {"label": "Remaining Rate (1 - Pruning Rate)", "file": "RemainingRate"},
-    "parameter": {"label": "Parameter Size [M]", "file": "ParameterSize"},
+    "remaining": {"label": "Remaining Rate (1 - Pruning Rate)\n(a) ", "file": "RemainingRate"},
+    "parameter": {"label": "Parameter Size [M]\n(b) ", "file": "ParameterSize"},
 }
 Y_AXIS: dict[str, str] = {"label": "Top-1 Accuracy [%]", "file": "Top1Acc"}
 

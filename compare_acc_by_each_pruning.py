@@ -35,7 +35,7 @@ class Config:
     taylor_prune_amount: float = 0.2  # Amount of pruning for Taylor pruning
     prune_bias: bool = False  # Whether to prune bias parameters
     eval_batches: int = None  # Number of batches for evaluation, None is all
-    model_name: str = "sret_s_fine_tuned" 
+    model_name: str = "vit_base_patch16_224" 
     # sret_s, sret_lt, sret_t
     # sret_s_no_loop
     # sret_s_fine_tuned
@@ -47,6 +47,7 @@ class Data:
     parameter: float
     imagenet_top1: float
     imagenet_top5: float
+    layers: dict[str, tuple[int, int]]  # {layer name: (number of weights, number of pruned weights)}
 
 def print_config() -> None:
     print("=== Setting ===")
@@ -85,45 +86,43 @@ def plt_pru_acc(
     plt.savefig(f"./prun_acc_figure/{model_name}/{title}")
     plt.show()
 
-def run_model(
-        pruning_rate: float,
-        device: torch.device,
-) -> tuple[float, float, float]:
-    # * define the model
-    if (Config.model_name == "sret_s"):
+def load_model(model_name: str, device: torch.device) -> nn.Module:
+    """Build the model by name and load its pre-trained / fine-tuned weights."""
+    if (model_name == "sret_s"):
         model = SReT.SReT_S(pretrained=False)
         model.load_state_dict(torch.load('./pre-trained/SReT_S.pth')['model'])
         model.to(device)
-    elif (Config.model_name == "sret_t"):
+    elif (model_name == "sret_t"):
         model = SReT.SReT_T(pretrained=False)
         model.load_state_dict(torch.load('./pre-trained/SReT_T.pth')['model'])
         model.to(device)
-    elif (Config.model_name == "sret_lt"):
+    elif (model_name == "sret_lt"):
         model = SReT.SReT_LT(pretrained=False)
         model.load_state_dict(torch.load('./pre-trained/SReT_LT_8-4-1_2-1-1.pth', weights_only=False)['model'])
         model.to(device)
-    elif (Config.model_name == "sret_s_no_loop"):
+    elif (model_name == "sret_s_no_loop"):
         model = cp_pre_w.load_SReT_S_no_loop()
         model.to(device)
-    elif (Config.model_name == "sret_s_fine_tuned"):
+    elif (model_name == "sret_s_fine_tuned"):
         model, _ = load_fine_tuned("./fine-tuned/sret_s_imagenet100_head.pth", device=device)
-    elif (Config.model_name == "vit_base_patch16_224" 
-          or Config.model_name == "vit_small_patch16_224"
-          or Config.model_name == "vit_tiny_patch16_224"):
+    elif (model_name == "vit_base_patch16_224" 
+          or model_name == "vit_small_patch16_224"
+          or model_name == "vit_tiny_patch16_224"):
         model = timm.create_model(
-            Config.model_name,
+            model_name,
             pretrained=True,
         ).to(device)
-    elif (Config.model_name == "loop_vit_large_lora"):
+    elif (model_name == "loop_vit_large_lora"):
         model, _, _ = T_LViT.load_checkpoint(
             checkpoint_path="./pre-trained/vit2_select_interleaved.pt",
             device=device
         )
     else:
-        raise ValueError(f"the model name is not found: {Config.model_name}")
+        raise ValueError(f"the model name is not found: {model_name}")
+    return model
 
-    # * make data loaders
-    train_loader, val_loader = None, None
+def build_loaders(model: nn.Module, model_name: str) -> tuple[DataLoader, DataLoader]:
+    """Train / val loaders of Config.dataset."""
     if Config.dataset == "imagenet100" and Config.image_net_root is not None:
         train_loader, val_loader = build_imagenet_loaders(
             Config.image_net_root,
@@ -131,20 +130,37 @@ def run_model(
             batch_size = Config.batch_size,
             num_workers=1,
         )
-        if Config.model_name.endswith("_fine_tuned"):
+        if model_name.endswith("_fine_tuned"):
             # 100-class head: keep the ImageFolder labels 0..99 (undo the remap to ImageNet-1k indices)
             train_loader.dataset.target_transform = None
             val_loader.dataset.target_transform = None
-        calibration_batches = make_calibration_batches(train_loader) #for Taylor pruning
     elif Config.dataset == "cifar100":
         train_loader, val_loader = build_cifar_loaders(
             model,
             batch_size = Config.batch_size,
             num_workers=1,
         )
-        calibration_batches = make_calibration_batches(train_loader) #for Taylor pruning
     else:
-        print("Please provide the path to the ImageNet dataset.")
+        raise ValueError("Please provide the path to the ImageNet dataset.")
+    return train_loader, val_loader
+
+def count_pruned_per_layer(model: nn.Module) -> dict[str, tuple[int, int]]:
+    """{layer name: (number of weights, number of pruned weights)} read from the weight masks."""
+    return {
+        name: (module.weight_mask.numel(), module.weight_mask.numel() - int(module.weight_mask.sum().item()))
+        for name, module in model.named_modules()
+        if hasattr(module, "weight_mask")
+    }
+
+def run_model(
+        pruning_rate: float,
+        device: torch.device,
+) -> Data:
+    model = load_model(Config.model_name, device)
+
+    # * make data loaders
+    train_loader, val_loader = build_loaders(model, Config.model_name)
+    calibration_batches = make_calibration_batches(train_loader) #for Taylor pruning
 
     # * Taylor pruning
     pruning_stats = apply_taylor_pruning(
@@ -173,7 +189,8 @@ def run_model(
         pruning_rate, 
         pruning_stats['total_prunable_parameters'] - pruning_stats['pruned_parameters'], 
         pruned_metrics['top1'], 
-        pruned_metrics['top5']
+        pruned_metrics['top5'],
+        count_pruned_per_layer(model),
     )
         
 def compare_acc_by_each_pruning() -> None:
@@ -199,6 +216,7 @@ def compare_acc_by_each_pruning() -> None:
                         "imagenet_top1": [d.imagenet_top1 for d in data],
                         "imagenet_top5": [d.imagenet_top5 for d in data]
                 },
+                "layers": [d.layers for d in data],
             },
             f
         )
