@@ -130,3 +130,30 @@ python main.py --imagenet-root /path/to/imagenet --eval-batches 10
 ```
 
 Use `--skip-baseline-eval` when you only want the post-pruning score.
+
+## bViT (single-block recurrent ViT)
+
+Reimplementation of Byra et al., "Investigating Single-Block Recurrence in
+Vision Transformers for Image Recognition" (arXiv:2605.10661), trained from
+scratch. Paper settings, assumptions (`[A]`) and environment adaptations (`[E]`)
+are listed in the docstrings of each file.
+
+| File | Content |
+|---|---|
+| `models/bViT/bViT.py` | `RecurrentViT`, presets `bvit_{s,b,l}`, `vit_{s,b,l}_scratch` |
+| `models/bViT/schedule.py` | loop schedules (extension): `"0x12"`, `"(0,1,2)x4"`, `"0x4,1x8"` |
+| `dl_dataset/registry.py` | cifar10 / cifar100 / tiny_imagenet / imagenet100 / imagenet1k (never downloads) |
+| `prepare_data.py` | the only script that downloads / extracts data |
+| `model_profile.py` | params, model size, FLOPs (total and paper-style linear-only), throughput, latency |
+| `train_bvit.py` | paper recipe (AdamW, warmup + cosine, Mixup/CutMix, EMA), resume, per-step accuracy |
+| `pruning/` | pruning = unit x scorer x step mode x allocation, each a registry |
+| `prune_bvit.py` | step-conditioned spectral pruning experiments (paper Sec. 4.2.3, Fig. 4-6) |
+
+```bash
+uv run python prepare_data.py --dataset cifar100
+uv run python model_profile.py --models bvit_s vit_s_scratch --dataset cifar100
+uv run python train_bvit.py --model bvit_s --dataset cifar100 --smoke   # pipeline check
+uv run python train_bvit.py --model bvit_s --dataset cifar100
+uv run python train_bvit.py --model bvit_s --loop "0x4,1x8" --dataset cifar100   # custom loop
+uv run python prune_bvit.py --checkpoint outputs/bvit/<run>/best.pth --groups Q V FFN_IN
+```
