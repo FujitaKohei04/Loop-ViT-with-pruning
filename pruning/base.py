@@ -1,7 +1,7 @@
 """Target resolution and the wrapper that makes a Linear prunable per loop step.
 
 A pruning method is the combination of three registered components:
-    unit       what is removed      (units.py:      spectral / weight)
+    unit       what is removed      (units.py:      spectral / weight / neuron / head)
     scorer     how important it is  (scorers.py:    grad_gate / sigma / magnitude / random)
     step_mode  how steps are used   (step_modes.py: per_use / shared / permuted)
 plus an allocation rule (per_layer / global) that turns a pruning ratio into masks.
@@ -84,6 +84,7 @@ class PrunableLinear(nn.Module):
         self.gates: torch.Tensor | None = None
         self.masks: torch.Tensor | None = None
         self._weights: torch.Tensor | None = None
+        self._biases: torch.Tensor | None = None  # only for units that also gate the bias
 
     @property
     def num_units(self) -> int:
@@ -117,24 +118,27 @@ class PrunableLinear(nn.Module):
         self.masks = masks.bool()
         gates = self.masks.to(self.linear.weight.device, torch.float32)
         self._weights = torch.stack([self.unit.effective_weight(gates[u]) for u in range(self.num_uses)])
+        biases = [self.unit.effective_bias(gates[u]) for u in range(self.num_uses)]
+        self._biases = None if biases[0] is None else torch.stack(biases)
 
     def reset(self) -> None:
         self.mode = "identity"
-        self.gates = self.masks = self._weights = None
+        self.gates = self.masks = self._weights = self._biases = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.mode == "identity":
             return self.linear(x)
         use = self._use_index()
         if self.mode == "mask":
-            return F.linear(x, self._weights[use].to(x.dtype), self.linear.bias)
+            bias = self.linear.bias if self._biases is None else self._biases[use].to(x.dtype)
+            return F.linear(x, self._weights[use].to(x.dtype), bias)
         if x.dim() < 3:
             return self.unit(x, self.gates[use, 1])
         return torch.cat((self.unit(x[:, :1], self.gates[use, 0]), self.unit(x[:, 1:], self.gates[use, 1])), dim=1)
 
 
-def attach(model: nn.Module, targets: Sequence[str], unit_factory) -> dict[str, PrunableLinear]:
-    """Replace each target Linear by a PrunableLinear built with unit_factory(linear)."""
+def attach(model: nn.Module, targets: Sequence[str], unit_cls) -> dict[str, PrunableLinear]:
+    """Replace each target Linear by a PrunableLinear built with unit_cls.build(linear, parent)."""
     loop_ctx = getattr(model, "loop_ctx", None)
     wrappers: dict[str, PrunableLinear] = {}
     for name in targets:
@@ -143,7 +147,7 @@ def attach(model: nn.Module, targets: Sequence[str], unit_factory) -> dict[str, 
         linear = getattr(parent, child)
         if isinstance(linear, PrunableLinear):
             raise RuntimeError(f"{name} is already wrapped; detach the previous pruner first")
-        wrapper = PrunableLinear(linear, unit_factory(linear), num_uses(model, name), loop_ctx)
+        wrapper = PrunableLinear(linear, unit_cls.build(linear, parent), num_uses(model, name), loop_ctx)
         setattr(parent, child, wrapper)
         wrappers[name] = wrapper
     return wrappers

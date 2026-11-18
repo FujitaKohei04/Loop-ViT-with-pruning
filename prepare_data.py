@@ -24,6 +24,7 @@ from pathlib import Path
 from torchvision import datasets
 
 from dl_dataset.registry import get_spec
+from run_logging import add_log_args, start_run_log
 
 TINY_IMAGENET_URL = "http://cs231n.stanford.edu/tiny-imagenet-200.zip"
 
@@ -38,7 +39,7 @@ def prepare_tiny_imagenet(root: Path, download: bool) -> None:
     """Download + unzip, then move val/images/*.JPEG into val/<wnid>/ (ImageFolder layout)."""
     data_root = root.parent
     zip_path = data_root / "tiny-imagenet-200.zip"
-    if not root.is_dir():
+    if not (root / "train").is_dir():  # main() already created root, so check its contents
         if not zip_path.exists():
             if not download:
                 raise FileNotFoundError(f"{zip_path} not found (run without --no-download)")
@@ -81,7 +82,9 @@ def main() -> None:
     parser.add_argument("--dataset", required=True, choices=["cifar10", "cifar100", "tiny_imagenet", "imagenet1k"])
     parser.add_argument("--root", default=None, help="default: the dataset's root in dl_dataset/registry.py")
     parser.add_argument("--no-download", action="store_true", help="tiny_imagenet: only reorganize an existing zip")
+    add_log_args(parser)
     args = parser.parse_args()
+    start_run_log(__file__, tag=args.dataset, log_dir=args.log_dir, config=vars(args), enabled=not args.no_log)
 
     root = get_spec(args.dataset, args.root).root
     root.mkdir(parents=True, exist_ok=True)

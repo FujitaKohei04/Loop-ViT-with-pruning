@@ -148,6 +148,12 @@ are listed in the docstrings of each file.
 | `train_bvit.py` | paper recipe (AdamW, warmup + cosine, Mixup/CutMix, EMA), resume, per-step accuracy |
 | `pruning/` | pruning = unit x scorer x step mode x allocation, each a registry |
 | `prune_bvit.py` | step-conditioned spectral pruning experiments (paper Sec. 4.2.3, Fig. 4-6) |
+| `pruning/compact.py` | turns masks into really smaller layers (low-rank, fewer neurons / heads) |
+| `pruning/tokens.py` | ToMe / EViT token reduction and step reduction |
+| `prune_compute_bvit.py` | accuracy, FLOPs and throughput of every pruning method (no retraining) |
+| `prune_compute_report.py` | figures and tables for `docs/pruning_compute/` |
+| `train_diagnostics.py` | W&B logging for `train_bvit.py --wandb`: grad norm / clipping / AMP skips / NaN, per-group grad & update ratio, per-loop-step activation RMS, attention entropy, loss |
+| `run_logging.py` | `logs/<script>_<YYYYmmdd_HHMMSS>_<tag>.log` with command, git, env, config, output, end status (`--log-dir`, `--no-log`) |
 
 ```bash
 uv run python prepare_data.py --dataset cifar100
@@ -155,5 +161,6 @@ uv run python model_profile.py --models bvit_s vit_s_scratch --dataset cifar100
 uv run python train_bvit.py --model bvit_s --dataset cifar100 --smoke   # pipeline check
 uv run python train_bvit.py --model bvit_s --dataset cifar100
 uv run python train_bvit.py --model bvit_s --loop "0x4,1x8" --dataset cifar100   # custom loop
+uv run python train_bvit.py --config configs/bvit/cifar100.json --wandb --wandb-group mgloop   # W&B diagnostics
 uv run python prune_bvit.py --checkpoint outputs/bvit/<run>/best.pth --groups Q V FFN_IN
 ```

@@ -28,6 +28,7 @@ from torch.utils.flop_counter import FlopCounterMode
 
 from dl_dataset.registry import get_spec
 from models.bViT.bViT import PRESETS, RecurrentViT, build_recurrent_vit
+from run_logging import add_log_args, start_run_log
 
 
 def build_any_model(name: str, *, img_size: int, num_classes: int, patch_size: int | None = None,
@@ -90,7 +91,9 @@ def count_flops(model: nn.Module, img_size: int, device: torch.device) -> dict[s
     def hook(module: nn.Module, inputs: tuple, output: torch.Tensor) -> None:
         nonlocal linear_flops
         if isinstance(module, nn.Linear):
-            linear_flops += 2 * inputs[0].numel() // module.in_features * module.in_features * module.out_features
+            # rows from the output, so that zero-width layers of pruned models (in_features == 0) count as 0
+            rows = output.numel() // max(module.out_features, 1)
+            linear_flops += 2 * rows * module.in_features * module.out_features
         else:  # Conv2d
             kernel = module.in_channels // module.groups * module.kernel_size[0] * module.kernel_size[1]
             linear_flops += 2 * output.numel() * kernel
@@ -200,7 +203,10 @@ def main() -> None:
     parser.add_argument("--no-amp", action="store_true")
     parser.add_argument("--skip-throughput", action="store_true")
     parser.add_argument("--csv", default=None)
+    add_log_args(parser)
     args = parser.parse_args()
+    start_run_log(__file__, tag="-".join(args.models), log_dir=args.log_dir, config=vars(args),
+                  enabled=not args.no_log)
 
     img_size, patch_size, num_classes = args.img_size, args.patch_size, args.num_classes
     if args.dataset is not None:

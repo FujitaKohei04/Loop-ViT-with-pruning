@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import time
 from itertools import islice
 from pathlib import Path
 
@@ -42,6 +41,7 @@ from dl_dataset.registry import build_loaders, get_spec  # noqa: E402
 from pruning import METHODS, Pruner, ScoringContext, parse_groups  # noqa: E402
 from pruning.analysis import (  # noqa: E402
     chance_persistence, cls_patch_similarity, persistence, step_similarity)
+from run_logging import add_log_args, link_run_log, run_timestamp, start_run_log  # noqa: E402
 from train_bvit import Config, evaluate, load_model, set_seed  # noqa: E402
 
 PAPER_METHODS = ["spectral_step", "spectral_global", "spectral_permuted", "spectral_sigma"]
@@ -63,8 +63,9 @@ def run(args: argparse.Namespace) -> None:
     calib_batches = list(islice(calib_loader, max(1, args.calib_images // args.batch_size)))
     loss_fn = nn.CrossEntropyLoss()
 
-    out_dir = Path(args.output_dir) / (args.run_name or f"{Path(args.checkpoint).parent.name}_{time.strftime('%Y%m%d-%H%M%S')}")
+    out_dir = Path(args.output_dir) / (args.run_name or f"{Path(args.checkpoint).parent.name}_{run_timestamp()}")
     out_dir.mkdir(parents=True, exist_ok=True)
+    link_run_log(out_dir)
     (out_dir / "args.json").write_text(json.dumps(vars(args), indent=2))
     print(f"model loop={model.schedule} dataset={spec.name} calib_images={len(calib_batches) * args.batch_size}")
     print(f"output: {out_dir}")
@@ -210,8 +211,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="./outputs/bvit_pruning")
     parser.add_argument("--run-name", default=None)
+    add_log_args(parser)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    run(parse_args())
+    args = parse_args()
+    start_run_log(__file__, tag="+".join(args.groups), log_dir=args.log_dir, config=vars(args),
+                  enabled=not args.no_log)
+    run(args)

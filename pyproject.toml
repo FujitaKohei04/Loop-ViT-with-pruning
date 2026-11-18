@@ -7,9 +7,11 @@ requires-python = ">=3.13"
 dependencies = [
     "einops>=0.8.2",
     "matplotlib>=3.11.1",
+    "optuna>=5.0.0",
     "ptflops>=0.7.5",
     "scikit-image>=0.26.0",
     "timm",
+    "wandb>=0.31.0",
 ]
 
 [project.optional-dependencies]

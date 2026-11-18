@@ -46,6 +46,14 @@ METHODS: dict[str, Method] = {
     "taylor_per_layer": Method("weight", "grad_gate", "shared"),
     "taylor_step": Method("weight", "grad_gate", "per_use"),
     "magnitude": Method("weight", "magnitude", "shared", "global"),
+    # structured (other papers); "_step" = step-conditioned variant for looped models
+    "neuron_taylor": Method("neuron", "grad_gate", "shared"),       # Molchanov et al. 2019, target FFN_IN
+    "neuron_taylor_step": Method("neuron", "grad_gate", "per_use"),
+    "neuron_magnitude": Method("neuron", "magnitude", "shared"),
+    "neuron_random": Method("neuron", "random", "shared"),
+    "head_taylor": Method("head", "grad_gate", "shared"),           # Michel et al. 2019, target PROJ
+    "head_taylor_step": Method("head", "grad_gate", "per_use"),
+    "head_random": Method("head", "random", "shared"),
 }
 
 

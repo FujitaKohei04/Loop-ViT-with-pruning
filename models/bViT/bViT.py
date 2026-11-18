@@ -22,7 +22,10 @@ What comes from the paper and what was assumed:
                 no dropout, separate q/k/v Linears (equivalent to a fused qkv;
                 needed to analyze Q, K and V separately), per-step logits use
                 the shared final norm + head, registers get no positional embedding
-    extension:  general loop schedules (see schedule.py), LoopContext
+    extension:  general loop schedules (see schedule.py), LoopContext,
+                multigrid loop (`levels`): the shared block also runs on 2x2-pooled
+                token grids and its update is broadcast back to the fine tokens
+                (see docs/mgloop/multigrid_loop_vit.md)
 """
 
 from __future__ import annotations
@@ -59,6 +62,11 @@ class RecurrentViTConfig:
     loop: str = "0x12"           # LoopSchedule spec
     use_step_embed: bool = False  # paper App. B (bViT-B-TE)
     num_registers: int = 0        # paper App. B (bViT-B-R uses 4)
+    # extension (multigrid loop): token grid level of every step, in the LoopSchedule grammar.
+    # Level l uses a (grid / 2^l)^2 patch grid. "0x2,1x8,0x2" = V-cycle, "(0,1,1)x4" = W-cycle
+    # (a loop of loops). None = every step on the full grid (the paper's model).
+    levels: str | None = None
+    use_level_embed: bool = True  # learned embedding added when a coarse level is entered
 
 
 class Attention(nn.Module):
@@ -154,7 +162,28 @@ class RecurrentViT(nn.Module):
         self.norm = nn.RMSNorm(config.embed_dim, eps=config.norm_eps)
         self.head = nn.Linear(config.embed_dim, config.num_classes) if config.num_classes > 0 else nn.Identity()
 
+        self.grid_size = config.img_size // config.patch_size
+        self.step_levels = self._parse_levels(config.levels)
+        num_coarse_levels = max(self.step_levels, default=0)
+        if num_coarse_levels > 0 and config.use_level_embed:
+            # zero init: the model starts as if no embedding was there
+            self.level_embed = nn.Parameter(torch.zeros(num_coarse_levels, config.embed_dim))
+        else:
+            self.register_parameter("level_embed", None)
+
         self._init_weights()
+
+    def _parse_levels(self, spec: str | None) -> list[int]:
+        """Grid level of every step of self.schedule ([] = all steps on the full grid)."""
+        if spec is None:
+            return []
+        levels = [step.block_id for step in LoopSchedule.parse(spec).unroll()]
+        if len(levels) != self.schedule.num_steps:
+            raise ValueError(f"levels {spec!r} has {len(levels)} steps, loop {self.config.loop!r} "
+                             f"has {self.schedule.num_steps}")
+        if self.grid_size % 2 ** max(levels) != 0:
+            raise ValueError(f"a {self.grid_size}x{self.grid_size} grid cannot be halved {max(levels)} times")
+        return levels
 
     def _init_weights(self) -> None:
         for parameter in (self.cls_token, self.pos_embed, self.reg_tokens):
@@ -171,7 +200,7 @@ class RecurrentViT(nn.Module):
 
     @torch.jit.ignore
     def no_weight_decay(self) -> set[str]:
-        return {"cls_token", "pos_embed", "reg_tokens", "step_embed"}
+        return {"cls_token", "pos_embed", "reg_tokens", "step_embed", "level_embed"}
 
     def reset_classifier(self, num_classes: int) -> None:
         self.num_classes = num_classes
@@ -183,6 +212,27 @@ class RecurrentViT(nn.Module):
         if self.reg_tokens is not None:
             x = torch.cat((x[:, :1], self.reg_tokens.expand(x.shape[0], -1, -1), x[:, 1:]), dim=1)
         return x
+
+    # * ----- multigrid loop: transfer between token grids -----
+
+    def restrict(self, x: torch.Tensor, level: int) -> torch.Tensor:
+        """Level `level` -> `level + 1`: 2x2 average of the patch tokens, prefix tokens are kept."""
+        size = self.grid_size >> level
+        prefix, patches = x[:, :self.num_prefix_tokens], x[:, self.num_prefix_tokens:]
+        B, _, C = patches.shape
+        patches = patches.view(B, size // 2, 2, size // 2, 2, C).mean(dim=(2, 4))
+        x = torch.cat((prefix, patches.reshape(B, -1, C)), dim=1)
+        if self.level_embed is not None:
+            x = x + self.level_embed[level]
+        return x
+
+    def prolong(self, delta: torch.Tensor, level: int) -> torch.Tensor:
+        """Level `level + 1` -> `level`: every coarse token is copied to its 2x2 children."""
+        size = self.grid_size >> (level + 1)
+        prefix, patches = delta[:, :self.num_prefix_tokens], delta[:, self.num_prefix_tokens:]
+        B, _, C = patches.shape
+        patches = patches.view(B, size, 1, size, 1, C).expand(B, size, 2, size, 2, C)
+        return torch.cat((prefix, patches.reshape(B, -1, C)), dim=1)
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.norm(x[:, 0])
@@ -204,11 +254,33 @@ class RecurrentViT(nn.Module):
         if self.step_embed is not None and len(steps) > len(self.step_embed):
             raise ValueError(f"step_embed has {len(self.step_embed)} steps, schedule needs {len(steps)}")
 
+        if self.step_levels and len(steps) > len(self.step_levels):
+            raise ValueError(f"levels are defined for {len(self.step_levels)} steps, schedule needs {len(steps)}")
+
         x = self.embed(x)
         per_step_logits: list[torch.Tensor] = []
+        # Multigrid loop. `saved` holds, for every level above the current one, the tokens of that
+        # level and their restriction: (fine, coarse_before). Going back up applies the coarse grid
+        # correction fine + prolong(coarse_after - coarse_before), so the fine tokens keep their
+        # detail and receive only the update computed on the coarse grid.
+        level = 0
+        saved: list[tuple[torch.Tensor, torch.Tensor]] = []
+
+        def move_to(target: int) -> None:
+            nonlocal x, level
+            while level < target:
+                coarse = self.restrict(x, level)
+                saved.append((x, coarse))
+                x, level = coarse, level + 1
+            while level > target:
+                fine, coarse_before = saved.pop()
+                x, level = fine + self.prolong(x - coarse_before, level - 1), level - 1
+
         try:
             for step in steps:
                 self.loop_ctx.step = step
+                if self.step_levels:
+                    move_to(self.step_levels[step.global_step])
                 if self.step_embed is not None:
                     x = x + self.step_embed[step.global_step]
                 x = self.blocks[step.block_id](x)
@@ -216,6 +288,7 @@ class RecurrentViT(nn.Module):
                     per_step_logits.append(self.forward_head(x))
         finally:
             self.loop_ctx.step = None
+        move_to(0)  # always return full-grid tokens
         return x, per_step_logits
 
     def forward(

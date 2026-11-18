@@ -14,3 +14,8 @@ pru_acc_all_model_figure
 TaylorImportanceInLoop/
 fine-tuned/
 prun_acc_figure_backup_unshuffled_calib/
+logs/
+wandb/
+bvit_summary.png
+bViT_share/
+papers/
